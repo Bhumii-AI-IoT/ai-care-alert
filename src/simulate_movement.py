@@ -35,8 +35,38 @@ np.random.seed(RANDOM_SEED)
 # ── Movement Simulation ───────────────────────────────────────────────────────
 
 def simulate_movement(duration=DURATION, fs=SAMPLING_RATE, state="normal"):
-    # To be implemented
-    pass
+    """
+    Simulate tri-axial accelerometer readings.
+    Normal activity based on ADL research - magnitude varies
+    between 8.5 and 12.5 m/s2 during typical daily movement.
+    """
+
+    n_samples = duration * fs
+    t = np.linspace(0, duration, n_samples)
+
+    if state == "normal":
+        # Normal daily activity - walking, shifting position
+        # Frequency of 1.8 Hz reflects average walking cadence
+        x = 0.8 * np.sin(2 * np.pi * 1.8 * t) + np.random.normal(0, 0.4, n_samples)
+        y = 0.6 * np.sin(2 * np.pi * 1.2 * t) + np.random.normal(0, 0.3, n_samples)
+        z = GRAVITY + 0.5 * np.sin(2 * np.pi * 0.9 * t) + np.random.normal(0, 0.3, n_samples)
+    else:
+        # Other states to be added
+        x = np.zeros(n_samples)
+        y = np.zeros(n_samples)
+        z = np.ones(n_samples) * GRAVITY
+
+    magnitude = np.sqrt(x**2 + y**2 + z**2)
+
+    df = pd.DataFrame({
+        "time_s"    : t,
+        "accel_x"   : x,
+        "accel_y"   : y,
+        "accel_z"   : z,
+        "magnitude" : magnitude
+    })
+
+    return df
 
 
 # ── Alert Detection ───────────────────────────────────────────────────────────
