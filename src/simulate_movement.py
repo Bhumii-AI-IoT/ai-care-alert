@@ -59,6 +59,39 @@ def simulate_movement(duration=DURATION, fs=SAMPLING_RATE, state="normal"):
         y = np.random.normal(0, 0.04, n_samples)
         z = np.ones(n_samples) * GRAVITY + np.random.normal(0, 0.03, n_samples)
 
+    elif state == "fall":
+        # Fall event - two phase pattern based on Bourke et al. (2007)
+        # Phase 1: free fall - magnitude drops below 5.89 m/s2 (~200ms)
+        # Phase 2: impact - magnitude spikes above 19.62 m/s2 (~100ms)
+        # Phase 3: post fall stillness - person on ground, not moving
+
+        # Start with normal activity
+        x = 0.8 * np.sin(2 * np.pi * 1.8 * t) + np.random.normal(0, 0.4, n_samples)
+        y = 0.6 * np.sin(2 * np.pi * 1.2 * t) + np.random.normal(0, 0.3, n_samples)
+        z = GRAVITY + np.random.normal(0, 0.3, n_samples)
+
+        # Fall occurs at 15 seconds
+        fall_start = int(15 * fs)
+
+        # Phase 1: free fall lasts approximately 200ms
+        free_fall_samples = int(0.2 * fs)
+        x[fall_start:fall_start + free_fall_samples] = np.random.normal(0, 1.5, free_fall_samples)
+        y[fall_start:fall_start + free_fall_samples] = np.random.normal(0, 1.5, free_fall_samples)
+        z[fall_start:fall_start + free_fall_samples] = np.random.normal(2.0, 1.0, free_fall_samples)
+
+        # Phase 2: impact lasts approximately 100ms
+        impact_start = fall_start + free_fall_samples
+        impact_samples = int(0.1 * fs)
+        x[impact_start:impact_start + impact_samples] = np.random.normal(12.0, 2.0, impact_samples)
+        y[impact_start:impact_start + impact_samples] = np.random.normal(8.0, 2.0, impact_samples)
+        z[impact_start:impact_start + impact_samples] = np.random.normal(15.0, 2.0, impact_samples)
+
+        # Phase 3: complete stillness after impact
+        still_start = impact_start + impact_samples
+        x[still_start:] = np.random.normal(0, 0.03, n_samples - still_start)
+        y[still_start:] = np.random.normal(0, 0.03, n_samples - still_start)
+        z[still_start:] = np.ones(n_samples - still_start) * GRAVITY + np.random.normal(0, 0.03, n_samples - still_start)
+
     else:
         # Other states to be added
         x = np.zeros(n_samples)
