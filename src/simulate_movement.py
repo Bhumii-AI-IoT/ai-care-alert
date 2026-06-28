@@ -114,12 +114,59 @@ def simulate_movement(duration=DURATION, fs=SAMPLING_RATE, state="normal"):
 # ── Alert Detection ───────────────────────────────────────────────────────────
 
 def detect_alert(df):
-    # To be implemented
-    pass
+    """
+    Analyse movement data and determine alert level.
 
+    Uses research-based thresholds:
+    - Fall detection: free fall phase below 5.89 m/s2 followed by
+      impact above 19.62 m/s2 (Bourke et al. 2007)
+    - Inactivity: magnitude standard deviation below 0.08 m/s2
+      sustained across the full recording window
+
+    Returns:
+        alert_level : 'none', 'inactivity', or 'fall'
+        message     : description of what was detected
+    """
+
+    magnitude = df['magnitude']
+
+    # Check for fall pattern - impact spike above threshold
+    if magnitude.max() > IMPACT_THRESHOLD:
+        impact_index = magnitude.idxmax()
+        pre_impact = magnitude.iloc[max(0, impact_index - 15):impact_index]
+        if pre_impact.min() < FREE_FALL_THRESHOLD:
+            return 'fall', ('MAJOR ALERT: Fall detected — free fall and impact confirmed. '
+                          'Alerting family and NHS immediately.')
+        else:
+            return 'fall', ('ALERT: High impact detected. '
+                          'Alerting family — NHS contacted if no response.')
+
+    # Check for prolonged inactivity
+    if magnitude.std() < 0.08:
+        return 'inactivity', ('ALERT: No movement detected for extended period. '
+                             'Alerting family to check on user.')
+
+    return 'none', 'Status: Normal activity detected. No alert required.'
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+
     print("AI Care Alert - Movement Simulation")
-    print("Development in progress.")
+    print("Based on tri-axial accelerometer research")
+    print("-" * 50)
+
+    os.makedirs("data/simulated", exist_ok=True)
+
+    for state in ["normal", "inactive", "fall"]:
+        print(f"\nSimulating: {state} state")
+        df = simulate_movement(state=state)
+        alert_level, message = detect_alert(df)
+        print(f"  Mean magnitude : {df['magnitude'].mean():.4f} m/s2")
+        print(f"  Max magnitude  : {df['magnitude'].max():.4f} m/s2")
+        print(f"  Std deviation  : {df['magnitude'].std():.4f} m/s2")
+        print(f"  {message}")
+        df.to_csv(f"data/simulated/{state}_movement.csv", index=False)
+
+    print("\nSimulation complete.")
+    print("Data saved to data/simulated/")
