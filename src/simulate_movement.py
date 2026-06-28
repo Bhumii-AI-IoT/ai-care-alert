@@ -50,6 +50,15 @@ def simulate_movement(duration=DURATION, fs=SAMPLING_RATE, state="normal"):
         x = 0.8 * np.sin(2 * np.pi * 1.8 * t) + np.random.normal(0, 0.4, n_samples)
         y = 0.6 * np.sin(2 * np.pi * 1.2 * t) + np.random.normal(0, 0.3, n_samples)
         z = GRAVITY + 0.5 * np.sin(2 * np.pi * 0.9 * t) + np.random.normal(0, 0.3, n_samples)
+
+    elif state == "inactive":
+        # Prolonged inactivity - person still, no meaningful movement
+        # Magnitude stays close to 9.81 m/s2 with minimal variation
+        # Standard deviation below 0.08 m/s2 indicates no activity
+        x = np.random.normal(0, 0.04, n_samples)
+        y = np.random.normal(0, 0.04, n_samples)
+        z = np.ones(n_samples) * GRAVITY + np.random.normal(0, 0.03, n_samples)
+
     else:
         # Other states to be added
         x = np.zeros(n_samples)
