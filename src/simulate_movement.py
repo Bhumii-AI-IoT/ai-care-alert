@@ -136,10 +136,10 @@ def detect_alert(df):
         pre_impact = magnitude.iloc[max(0, impact_index - 15):impact_index]
         if pre_impact.min() < FREE_FALL_THRESHOLD:
             return 'fall', ('MAJOR ALERT: Fall detected — free fall and impact confirmed. '
-                          'Alerting family and NHS immediately.')
+                          'Alerting family and emergency services immediately.')
         else:
             return 'fall', ('ALERT: High impact detected. '
-                          'Alerting family — NHS contacted if no response.')
+                          'Alerting family — emergency services contacted if no response.')
 
     # Check for prolonged inactivity
     if magnitude.std() < 0.08:

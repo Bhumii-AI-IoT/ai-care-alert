@@ -49,7 +49,7 @@ The system has two ways of detecting that someone needs help:
 | Situation | Who Gets Alerted |
 |-----------|-----------------|
 | Button pressed or inactivity detected | Family first |
-| Fall confirmed or no response | Family and NHS simultaneously |
+| Fall confirmed or no response | Family and emergency services simultaneously |
 
 ---
 
@@ -81,7 +81,7 @@ Movement detection is based on tri-axial accelerometer research:
 Research and concept design complete. Movement simulation with 
 tiered alert detection is working. Next phase is expanding the 
 simulation and exploring machine learning approaches for improved 
-detection accuracy.
+detection accuracy. The escalation path is design intent. No integration with any healthcare provider has been built or agreed.
 
 ---
 
