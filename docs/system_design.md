@@ -59,13 +59,13 @@ The system uses a tiered approach to decide who gets notified:
 
 | Trigger | First Alert | Second Alert |
 |---------|-------------|--------------|
-| Button pressed | Family / loved ones | NHS if no response |
-| No movement for long period | Family / loved ones | NHS if no response |
-| Major emergency confirmed | Family / loved ones | NHS simultaneously |
+| Button pressed | Family / loved ones | Emergency services if no response |
+| No movement for long period | Family / loved ones | Emergency services if no response |
+| Major emergency confirmed | Family / loved ones | Emergency services simultaneously |
 
 This ensures:
 - Family is always the first contact
-- NHS is only contacted when genuinely necessary
+- Emergency services are only contacted when genuinely necessary
 - No unnecessary burden on emergency services
 
 ---
@@ -104,7 +104,7 @@ for this group.
 This document describes the intended system design concept. 
 This project is currently at the research and ideation stage — 
 the system design, alert logic, and prototype code are being 
-documented and developed. No physical hardware exists yet.
+documented and developed. No physical hardware exists yet. The escalation path is design intent. No integration with any healthcare provider has been built or agreed.
 
 The code in this repository simulates how the system would 
 behave — demonstrating the concept before any hardware 
