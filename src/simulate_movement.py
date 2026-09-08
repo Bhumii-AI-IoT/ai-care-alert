@@ -1,172 +1,184 @@
 # simulate_movement.py
-# Author: Bhumii-AI-IoT
-# Project: AI Care Alert
-# Description: Simulates tri-axial accelerometer data for detecting
-#              movement states in vulnerable individuals.
+# Fake accelerometer data for testing the detector.
 #
-# Research basis:
-# - Bourke et al. (2007) - threshold-based tri-axial accelerometer
-#   fall detection algorithm
-# - Fall impact threshold: 19.62 m/s2 (2G)
-# - Free fall threshold: 5.89 m/s2 (0.6G)
-# - Sampling rate: 50Hz standard for wearable accelerometers
+# v1 had three states - normal, inactive, fall - and the detector got all
+# three right. That looked like success but proved nothing, because the
+# simulator was built to produce values that crossed the exact thresholds the
+# detector checked for. The test couldn't fail.
+#
+# The three states added here are the ones that break it:
+#     sleep          - still, but fine
+#     sitting_still  - still, but fine
+#     device_drop    - impact, but nobody fell
+#
+# These are where the false alarms come from in real products. A system that
+# can't tell them apart from an actual emergency calls the family every night
+# and gets switched off inside a fortnight.
+#
+# The trick the detector uses is breathing. Someone lying motionless still
+# breathes, which shows up as a slow periodic wobble. A dropped device
+# doesn't. And sleeping people shift position every few minutes, whereas
+# someone unconscious doesn't move at all.
 
 import numpy as np
 import pandas as pd
-import os
 
-# ── Research-Based Constants ──────────────────────────────────────────────────
+SAMPLING_RATE = 50
+GRAVITY = 9.81
 
-SAMPLING_RATE       = 50      # Hz - standard wearable accelerometer rate
-DURATION            = 60      # seconds per session
-GRAVITY             = 9.81    # m/s2 - standard gravity
+# Bourke et al. 2007
+FREE_FALL_THRESHOLD = 5.89
+IMPACT_THRESHOLD = 19.62
 
-# Thresholds from Bourke et al. (2007) fall detection research
-FREE_FALL_THRESHOLD = 5.89    # m/s2 - free fall phase indicator
-IMPACT_THRESHOLD    = 19.62   # m/s2 - ground impact indicator
+RESP_RATE_HZ = 0.25      # ~15 breaths/min
+RESP_AMPLITUDE = 0.030   # m/s2 - small, but measurable on a torso device
+SENSOR_NOISE = 0.008     # noise floor of a device just lying there
 
-# Inactivity alert threshold
-INACTIVITY_MINUTES  = 30      # minutes before family alert triggers
+# should_alert is the ground truth label evaluate.py checks against.
+STATES = {
+    "normal":             {"should_alert": False},
+    "sleep":              {"should_alert": False},
+    "sitting_still":      {"should_alert": False},
+    "device_drop":        {"should_alert": False},
+    "inactive_emergency": {"should_alert": True},
+    "fall":               {"should_alert": True},
+}
 
-RANDOM_SEED         = 42
-np.random.seed(RANDOM_SEED)
+
+def _breathing(t, rng, amplitude=RESP_AMPLITUDE):
+    # Jitter the rate per session, otherwise the detector locks onto one exact
+    # frequency and looks better than it is.
+    rate = np.clip(rng.normal(RESP_RATE_HZ, 0.04), 0.18, 0.34)
+    return amplitude * np.sin(2 * np.pi * rate * t + rng.uniform(0, 2 * np.pi))
 
 
-# ── Movement Simulation ───────────────────────────────────────────────────────
+def _shifts(n, fs, rng, mean_gap_s):
+    # Short bursts of movement - turning over in bed, adjusting in a chair.
+    # This is what a collapsed person doesn't have.
+    out = np.zeros(n)
+    count = max(0, rng.poisson((n / fs) / mean_gap_s))
 
-def simulate_movement(duration=DURATION, fs=SAMPLING_RATE, state="normal"):
+    for _ in range(count):
+        start = rng.integers(0, max(1, n - int(1.5 * fs)))
+        end = min(n, start + int(rng.uniform(0.4, 1.2) * fs))
+        burst = rng.normal(0, rng.uniform(0.5, 1.6), end - start)
+        out[start:end] += burst * np.hanning(end - start)  # taper the edges
+
+    return out
+
+
+def simulate_movement(state="normal", duration=180, fs=SAMPLING_RATE, seed=None):
+    """One session of fake accelerometer data.
+
+    Pass a different seed per session, otherwise every session is identical
+    and you're back to testing one sample per class.
     """
-    Simulate tri-axial accelerometer readings.
-    Normal activity based on ADL research - magnitude varies
-    between 8.5 and 12.5 m/s2 during typical daily movement.
-    """
+    if state not in STATES:
+        raise ValueError(f"unknown state '{state}', try one of {list(STATES)}")
 
-    n_samples = duration * fs
-    t = np.linspace(0, duration, n_samples)
+    rng = np.random.default_rng(seed)
+    n = int(duration * fs)
+    t = np.linspace(0, duration, n)
 
     if state == "normal":
-        # Normal daily activity - walking, shifting position
-        # Frequency of 1.8 Hz reflects average walking cadence
-        x = 0.8 * np.sin(2 * np.pi * 1.8 * t) + np.random.normal(0, 0.4, n_samples)
-        y = 0.6 * np.sin(2 * np.pi * 1.2 * t) + np.random.normal(0, 0.3, n_samples)
-        z = GRAVITY + 0.5 * np.sin(2 * np.pi * 0.9 * t) + np.random.normal(0, 0.3, n_samples)
+        # Walking. 1.8 Hz is roughly average cadence.
+        x = 0.8 * np.sin(2 * np.pi * 1.8 * t) + rng.normal(0, 0.40, n)
+        y = 0.6 * np.sin(2 * np.pi * 1.2 * t) + rng.normal(0, 0.30, n)
+        z = GRAVITY + 0.5 * np.sin(2 * np.pi * 0.9 * t) + rng.normal(0, 0.30, n)
 
-    elif state == "inactive":
-        # Prolonged inactivity - person still, no meaningful movement
-        # Magnitude stays close to 9.81 m/s2 with minimal variation
-        # Standard deviation below 0.08 m/s2 indicates no activity
-        x = np.random.normal(0, 0.04, n_samples)
-        y = np.random.normal(0, 0.04, n_samples)
-        z = np.ones(n_samples) * GRAVITY + np.random.normal(0, 0.03, n_samples)
+    elif state == "sleep":
+        # Motionless most of the time, breathing, turns over every ~4 min.
+        x = rng.normal(0, 0.020, n) + _breathing(t, rng) * 0.4
+        y = rng.normal(0, 0.020, n) + _breathing(t, rng) * 0.4
+        z = GRAVITY + rng.normal(0, 0.018, n) + _breathing(t, rng)
+        s = _shifts(n, fs, rng, mean_gap_s=240)
+        x += s
+        z += s * 0.6
 
-    elif state == "fall":
-        # Fall event - two phase pattern based on Bourke et al. (2007)
-        # Phase 1: free fall - magnitude drops below 5.89 m/s2 (~200ms)
-        # Phase 2: impact - magnitude spikes above 19.62 m/s2 (~100ms)
-        # Phase 3: post fall stillness - person on ground, not moving
+    elif state == "sitting_still":
+        # Watching telly. Still, but fidgets more often than someone asleep.
+        x = rng.normal(0, 0.035, n) + _breathing(t, rng) * 0.5
+        y = rng.normal(0, 0.035, n) + _breathing(t, rng) * 0.5
+        z = GRAVITY + rng.normal(0, 0.030, n) + _breathing(t, rng)
+        s = _shifts(n, fs, rng, mean_gap_s=45)
+        x += s
+        y += s * 0.5
 
-        # Start with normal activity
-        x = 0.8 * np.sin(2 * np.pi * 1.8 * t) + np.random.normal(0, 0.4, n_samples)
-        y = 0.6 * np.sin(2 * np.pi * 1.2 * t) + np.random.normal(0, 0.3, n_samples)
-        z = GRAVITY + np.random.normal(0, 0.3, n_samples)
+    elif state == "inactive_emergency":
+        # Collapsed. Still breathing, but no postural shifts at all - that
+        # absence is the only thing separating this from sleep.
+        x = rng.normal(0, 0.018, n) + _breathing(t, rng) * 0.4
+        y = rng.normal(0, 0.018, n) + _breathing(t, rng) * 0.4
+        z = GRAVITY + rng.normal(0, 0.016, n) + _breathing(t, rng)
 
-        # Fall occurs at 15 seconds
-        fall_start = int(15 * fs)
+    elif state in ("fall", "device_drop"):
+        human = state == "fall"
 
-        # Phase 1: free fall lasts approximately 200ms
-        free_fall_samples = int(0.2 * fs)
-        x[fall_start:fall_start + free_fall_samples] = np.random.normal(0, 1.5, free_fall_samples)
-        y[fall_start:fall_start + free_fall_samples] = np.random.normal(0, 1.5, free_fall_samples)
-        z[fall_start:fall_start + free_fall_samples] = np.random.normal(2.0, 1.0, free_fall_samples)
+        # Both start from movement - someone walking, or a device being
+        # handled. Keeping the lead-up identical is deliberate: it forces the
+        # detector to discriminate on what happens *after* the impact rather
+        # than on some incidental difference beforehand.
+        x = 0.8 * np.sin(2 * np.pi * 1.8 * t) + rng.normal(0, 0.40, n)
+        y = 0.6 * np.sin(2 * np.pi * 1.2 * t) + rng.normal(0, 0.30, n)
+        z = GRAVITY + rng.normal(0, 0.30, n)
 
-        # Phase 2: impact lasts approximately 100ms
-        impact_start = fall_start + free_fall_samples
-        impact_samples = int(0.1 * fs)
-        x[impact_start:impact_start + impact_samples] = np.random.normal(12.0, 2.0, impact_samples)
-        y[impact_start:impact_start + impact_samples] = np.random.normal(8.0, 2.0, impact_samples)
-        z[impact_start:impact_start + impact_samples] = np.random.normal(15.0, 2.0, impact_samples)
+        # Vary when it happens so the detector can't rely on timing.
+        i0 = int(rng.uniform(0.15, 0.55) * duration * fs)
 
-        # Phase 3: complete stillness after impact
-        still_start = impact_start + impact_samples
-        x[still_start:] = np.random.normal(0, 0.03, n_samples - still_start)
-        y[still_start:] = np.random.normal(0, 0.03, n_samples - still_start)
-        z[still_start:] = np.ones(n_samples - still_start) * GRAVITY + np.random.normal(0, 0.03, n_samples - still_start)
+        # Free fall, ~200ms. Magnitude drops below 5.89.
+        ff = int(rng.uniform(0.15, 0.28) * fs)
+        x[i0:i0 + ff] = rng.normal(0, 1.5, ff)
+        y[i0:i0 + ff] = rng.normal(0, 1.5, ff)
+        z[i0:i0 + ff] = rng.normal(2.0, 1.0, ff)
 
-    else:
-        # Other states to be added
-        x = np.zeros(n_samples)
-        y = np.zeros(n_samples)
-        z = np.ones(n_samples) * GRAVITY
+        # Impact, ~100ms. Spikes above 19.62.
+        i1 = i0 + ff
+        imp = int(rng.uniform(0.06, 0.14) * fs)
+        x[i1:i1 + imp] = rng.normal(12.0, 2.0, imp)
+        y[i1:i1 + imp] = rng.normal(8.0, 2.0, imp)
+        z[i1:i1 + imp] = rng.normal(15.0, 2.0, imp)
 
-    magnitude = np.sqrt(x**2 + y**2 + z**2)
+        # Everything above is identical for both. Only the aftermath differs.
+        i2 = i1 + imp
+        rest = n - i2
 
-    df = pd.DataFrame({
-        "time_s"    : t,
-        "accel_x"   : x,
-        "accel_y"   : y,
-        "accel_z"   : z,
-        "magnitude" : magnitude
+        if rest > 0:
+            tr = t[i2:]
+            if human:
+                # On the floor: breathing, the odd feeble movement.
+                x[i2:] = rng.normal(0, 0.022, rest) + _breathing(tr, rng) * 0.4
+                y[i2:] = rng.normal(0, 0.022, rest) + _breathing(tr, rng) * 0.4
+                z[i2:] = GRAVITY + rng.normal(0, 0.020, rest) + _breathing(tr, rng)
+            else:
+                # Inert. Noise only, no breathing. It also lands at some
+                # random angle, so gravity spreads across all three axes
+                # instead of sitting neatly on z.
+                tilt = rng.uniform(0, np.pi)
+                roll = rng.uniform(0, 2 * np.pi)
+                x[i2:] = GRAVITY * np.sin(tilt) * np.cos(roll) + rng.normal(0, SENSOR_NOISE, rest)
+                y[i2:] = GRAVITY * np.sin(tilt) * np.sin(roll) + rng.normal(0, SENSOR_NOISE, rest)
+                z[i2:] = GRAVITY * np.cos(tilt) + rng.normal(0, SENSOR_NOISE, rest)
+
+    magnitude = np.sqrt(x ** 2 + y ** 2 + z ** 2)
+
+    return pd.DataFrame({
+        "time_s": t,
+        "accel_x": x,
+        "accel_y": y,
+        "accel_z": z,
+        "magnitude": magnitude,
     })
 
-    return df
-
-
-# ── Alert Detection ───────────────────────────────────────────────────────────
-
-def detect_alert(df):
-    """
-    Analyse movement data and determine alert level.
-
-    Uses research-based thresholds:
-    - Fall detection: free fall phase below 5.89 m/s2 followed by
-      impact above 19.62 m/s2 (Bourke et al. 2007)
-    - Inactivity: magnitude standard deviation below 0.08 m/s2
-      sustained across the full recording window
-
-    Returns:
-        alert_level : 'none', 'inactivity', or 'fall'
-        message     : description of what was detected
-    """
-
-    magnitude = df['magnitude']
-
-    # Check for fall pattern - impact spike above threshold
-    if magnitude.max() > IMPACT_THRESHOLD:
-        impact_index = magnitude.idxmax()
-        pre_impact = magnitude.iloc[max(0, impact_index - 15):impact_index]
-        if pre_impact.min() < FREE_FALL_THRESHOLD:
-            return 'fall', ('MAJOR ALERT: Fall detected — free fall and impact confirmed. '
-                          'Alerting family and NHS immediately.')
-        else:
-            return 'fall', ('ALERT: High impact detected. '
-                          'Alerting family — NHS contacted if no response.')
-
-    # Check for prolonged inactivity
-    if magnitude.std() < 0.08:
-        return 'inactivity', ('ALERT: No movement detected for extended period. '
-                             'Alerting family to check on user.')
-
-    return 'none', 'Status: Normal activity detected. No alert required.'
-
-# ── Run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    print("Sample session per state\n")
+    print(f"{'state':<20}{'mean':>9}{'max':>9}{'std':>9}   alert?")
+    print("-" * 58)
 
-    print("AI Care Alert - Movement Simulation")
-    print("Based on tri-axial accelerometer research")
-    print("-" * 50)
+    for st in STATES:
+        m = simulate_movement(state=st, seed=1)["magnitude"]
+        print(f"{st:<20}{m.mean():>9.3f}{m.max():>9.3f}{m.std():>9.4f}"
+              f"   {STATES[st]['should_alert']}")
 
-    os.makedirs("data/simulated", exist_ok=True)
-
-    for state in ["normal", "inactive", "fall"]:
-        print(f"\nSimulating: {state} state")
-        df = simulate_movement(state=state)
-        alert_level, message = detect_alert(df)
-        print(f"  Mean magnitude : {df['magnitude'].mean():.4f} m/s2")
-        print(f"  Max magnitude  : {df['magnitude'].max():.4f} m/s2")
-        print(f"  Std deviation  : {df['magnitude'].std():.4f} m/s2")
-        print(f"  {message}")
-        df.to_csv(f"data/simulated/{state}_movement.csv", index=False)
-
-    print("\nSimulation complete.")
-    print("Data saved to data/simulated/")
+    print("\nNote sleep and sitting_still both sit below v1's 0.08 threshold,")
+    print("and fall and device_drop have near-identical peaks. That's the bug.")
