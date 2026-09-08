@@ -1,0 +1,12 @@
+﻿# Generated simulation data - regenerate with src/simulate_movement.py
+data/simulated/*.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editor
+.vscode/
+.idea/
