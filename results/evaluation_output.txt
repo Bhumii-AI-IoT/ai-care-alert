@@ -1,0 +1,25 @@
+﻿
+AI Care Alert - detector evaluation
+40 sessions per state, 1200s each, 240 total
+
+true state                   none         fall   inactivity  device_lost       ok
+---------------------------------------------------------------------------------
+normal                         40            0            0            0    100%
+sleep                          40            0            0            0    100%
+sitting_still                  40            0            0            0    100%
+device_drop                     0            0            0           40    100%
+inactive_emergency              0            0           40            0    100%
+fall                            0           40            0            0    100%
+
+should NOT alert: normal, sleep, sitting_still, device_drop
+SHOULD alert:     inactive_emergency, fall
+
+False alarms :   0.00%  (0/160 benign sessions alerted)
+Misses       :   0.00%  (0/80 emergencies not alerted)
+
+Breathing ratio by state:
+  device_drop.post_impact_resp_ratio           0.0530  (n=40)
+  fall.post_impact_resp_ratio                  0.9019  (n=40)
+  inactive_emergency.resp_ratio                0.9289  (n=40)
+  sitting_still.resp_ratio                     0.7628  (n=40)
+  sleep.resp_ratio                             0.8142  (n=40)
