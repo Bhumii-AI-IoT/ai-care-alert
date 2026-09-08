@@ -1,91 +1,145 @@
 # AI Care Alert
 
-## The Problem
+Movement monitoring for people who live alone, built around measuring how often
+it gets things wrong.
 
-Some people face a silent risk every single day.
+**Status:** research prototype, synthetic data only. No hardware, no real
+accelerometer data yet.
 
-A fall. A sudden health episode. A moment where they need help 
-but cannot reach anyone. This is the reality for elderly people, 
-disabled individuals, those managing serious long term conditions, 
-and people who live alone — a significant and growing part of 
-our population.
+## The idea
 
-Current solutions exist but they have real gaps. Most require the 
-person to press a button — which assumes they are conscious, alert, 
-and able to react in that moment. Many connect to paid monitoring 
-centres rather than the people who actually care about them. And 
-almost none are intelligent enough to detect an emergency when 
-the person cannot signal one themselves.
+An alert system for elderly, disabled or isolated people that can notice a fall
+or a collapse without anyone pressing a button. The button-press model assumes
+the person is conscious and able to react, which is exactly the case where it's
+least likely to be true.
 
-This project explores a different approach — a system that combines 
-a manual alert option with automatic AI-based movement monitoring, 
-so that help can be triggered whether or not the person is able 
-to ask for it.
+## What it isn't
 
-For the elderly. For the disabled. For those managing serious illness. 
-For anyone who deserves to feel safe — and whose family deserves 
-peace of mind.
+There's no machine learning in here. Detection is threshold logic plus some
+spectral analysis of the breathing band. An earlier version of this README
+called it an "AI monitoring layer", which wasn't accurate, and I've corrected
+it. A learned model might come later, once the current approach is tested
+against real data. The project name is from before that correction.
 
----
+## What this actually solves
 
-## How It Works
+False alarms. A system that calls the family every night gets switched off, and
+once it's off it protects nobody — so the number that decides whether something
+like this is usable isn't detection accuracy, it's the false alarm rate.
 
-The system has two ways of detecting that someone needs help:
+The first version used two magnitude thresholds. Tested against situations it
+hadn't been built around, it failed all three:
 
-**Manual Alert**
-- A wearable button the person can press themselves
-- A mobile app with a single tap emergency alert
+| Situation | Old verdict | Should be |
+|---|---|---|
+| Asleep | inactivity alert | no alert |
+| Sitting still | inactivity alert | no alert |
+| Device knocked off a table | fall — ambulance called | no alert |
 
-**Automatic AI Monitoring**
-- Tri-axial accelerometer sensors monitor movement continuously
-- Detects prolonged inactivity — no movement for an extended period
-- Detects fall events — using free fall and impact phase patterns
-  based on published research thresholds
+The current version separates these using two signals:
 
----
+- **Breathing** — a motionless person still breathes, leaving a slow trace
+  around 0.25 Hz. A dropped device gives only noise. Measured separation
+  between the two: **0.053 vs 0.910**.
+- **Postural shifts** — a resting person turns over now and then, an
+  unconscious one doesn't.
 
-## Alert System
+## Results
 
-| Situation | Who Gets Alerted |
-|-----------|-----------------|
-| Button pressed or inactivity detected | Family first |
-| Fall confirmed or no response | Family and emergency services simultaneously |
+240 sessions, 40 per state, fresh seed each time, 1200s each:
 
----
+| | |
+|---|---|
+| False alarms | **0.00%** (0 of 160 benign sessions) |
+| Misses | **1.25%** (1 of 80 emergencies) |
 
-## Technical Approach
+**The 1.25% miss rate isn't good enough for a safety system** and it's the
+current blocking issue — one fall slipped past because the impact fell outside
+the detection window.
 
-Movement detection is based on tri-axial accelerometer research:
+The main thing I learned: false alarms come down to how long you watch, not how
+you set the thresholds.
 
-- **Fall detection** uses a two-phase threshold approach — free fall 
-  phase below 5.89 m/s² followed by impact above 19.62 m/s²
-  (Bourke et al. 2007)
-- **Inactivity detection** triggers when magnitude standard deviation 
-  falls below 0.08 m/s² for a sustained period
-- **Sampling rate** of 50Hz — standard for wearable accelerometers
+| Watched for | False alarms |
+|---|---|
+| 60s | 24.00% |
+| 180s | 10.00% |
+| 600s | 2.00% |
+| 1200s | 0.00% |
 
----
+In the first few minutes a sleeping person might not move at all, so nothing
+can tell them apart from someone collapsed. So escalation waits for a 20-minute
+confirmation window.
 
-## Repository Structure
+Full workings and limitations: [`docs/evaluation.md`](docs/evaluation.md)
 
-| File | What It Contains |
-|------|-----------------|
-| docs/system_design.md | Full system design and alert logic |
-| src/simulate_movement.py | Movement simulation and alert detection |
-| data/simulated/ | Simulated sensor data for three states |
+## Running it
 
----
+```bash
+pip install -r requirements.txt
 
-## Current Status
+python3 src/simulate_movement.py        # per-state summary
+python3 src/evaluate.py                  # full run
+python3 src/evaluate.py --n 40 --duration 1200
+```
 
-Research and concept design complete. Movement simulation with 
-tiered alert detection is working. Next phase is expanding the 
-simulation and exploring machine learning approaches for improved 
-detection accuracy. The escalation path is design intent. No integration with any healthcare provider has been built or agreed.
+On Windows use `python` instead of `python3` and `src\` instead of `src/`.
 
----
+## Layout
 
-## Disclaimer
+```
+src/simulate_movement.py   six synthetic movement states
+src/detector.py            the alert logic
+src/evaluate.py            confusion matrix, false alarm and miss rates
+docs/system_design.md      intended architecture
+docs/evaluation.md         results and limitations
+```
 
-This is a research and concept project. It is not a certified 
-medical device and is not intended for clinical use.
+## The states it simulates
+
+| State | Alerts? | Why it's here |
+|---|---|---|
+| normal | no | walking about |
+| sleep | no | still but fine — the main false alarm trap |
+| sitting_still | no | still but fine |
+| device_drop | no | impact with nobody attached |
+| inactive_emergency | yes | collapsed, breathing, not moving |
+| fall | yes | free fall, impact, person on the floor |
+
+## Honest limitations
+
+Every number here is from synthetic data. I wrote both the simulator and the
+detector, so it's still partly circular — the duration finding should hold
+because it's structural, but the exact percentages won't transfer to real data.
+Breathing detection assumes a signal a cheap wrist sensor may not pick up. No
+real fall data has been tested.
+
+## Next
+
+1. Fix the missed fall — nothing else matters until the miss rate is zero
+2. Validate against SisFall and MobiAct
+3. Check breathing is detectable on real wrist hardware
+4. Consider a learned model only after that
+
+## Where the fall thresholds come from
+
+Bourke, A.K., O'Brien, J.V., Lyons, G.M. (2007). Free fall 5.89 m/s², impact
+19.62 m/s², 50 Hz sampling.
+
+## Related work
+
+Indian patent application IN202611062464 A1 (published, unexamined) —
+*AI-enabled smart healthcare wearable bracelet for continuous real-time patient
+monitoring and predictive health analytics*, on which I'm first-named inventor.
+
+That's a separate piece of work: a physiological monitoring bracelet (heart
+rate, SpO₂, ECG), not this accelerometer project. What connects them is the
+same underlying problem — keeping sensor signal quality high and false alarms
+low when continuously monitoring vulnerable people. The patent's specification
+raises signal noise and false-alarm reduction as a core challenge (paragraph
+28); this repository is where I've actually worked that problem with measured
+results.
+
+## Author
+
+Bhumi Shah — [github.com/Bhumii-AI-IoT](https://github.com/Bhumii-AI-IoT)
