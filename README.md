@@ -40,7 +40,7 @@ The current version separates these using two signals:
 
 - **Breathing** — a motionless person still breathes, leaving a slow trace
   around 0.25 Hz. A dropped device gives only noise. Measured separation
-  between the two: **0.053 vs 0.910**.
+  between the two: **0.053 vs 0.902**.
 - **Postural shifts** — a resting person turns over now and then, an
   unconscious one doesn't.
 
@@ -51,11 +51,39 @@ The current version separates these using two signals:
 | | |
 |---|---|
 | False alarms | **0.00%** (0 of 160 benign sessions) |
-| Misses | **1.25%** (1 of 80 emergencies) |
+| Misses | **0.00%** (0 of 80 emergencies) |
 
-**The 1.25% miss rate isn't good enough for a safety system** and it's the
-current blocking issue — one fall slipped past because the impact fell outside
-the detection window.
+Across eight independent seed sets — 1200 sessions — misses stay at 0.00%
+throughout, and false alarms average 0.25%, range 0.00% to 1.00%. One sleeping
+session in 25 still trips the inactivity path on some seed sets. The single-run
+figures above are the optimistic end of that range.
+
+### The fall that was missed, and what it turned out to be
+
+An earlier run missed one fall in 40. The cause was not the detection window,
+as this README first said.
+
+The free fall was there, one sample before the peak. But the peak reached only
+19.41 m/s² against an impact threshold of 19.62, so the impact check returned
+before the window was ever evaluated. Across 40 fall sessions the peaks ranged
+19.41 to 26.89 — a genuine tail case, not a boundary artefact.
+
+19.62 m/s² comes from Bourke et al. (2007), measured on healthy adults falling
+onto a hard floor in a lab. Peak magnitude scales with body mass, drop height
+and surface hardness, so a light, frail person going down onto carpet lands
+softer. Holding everyone to that figure means the falls missed are those by the
+smallest and frailest users — precisely the people this is for.
+
+Detection now works forwards from each free-fall episode rather than backwards
+from the largest peak. The free fall is what makes it a fall; the peak only says
+how hard. That also fixed a second flaw: the previous version could only ever
+detect one fall per session.
+
+The floor was chosen after seeing which case failed, so read it with that in
+mind. `docs/evaluation.md` sets out the sensitivity check and the multi-seed
+range.
+
+### What the duration sweep showed
 
 The main thing I learned: false alarms come down to how long you watch, not how
 you set the thresholds.
@@ -72,6 +100,16 @@ can tell them apart from someone collapsed. So escalation waits for a 20-minute
 confirmation window.
 
 Full workings and limitations: [`docs/evaluation.md`](docs/evaluation.md)
+
+## Escalation
+
+| Situation | Who gets alerted |
+|---|---|
+| Inactivity detected | Family first |
+| Fall confirmed, or no response | Family and emergency services together |
+
+The escalation path is design intent. No integration with any healthcare
+provider has been built or agreed.
 
 ## Running it
 
@@ -116,8 +154,10 @@ real fall data has been tested.
 
 ## Next
 
-1. Fix the missed fall — nothing else matters until the miss rate is zero
-2. Validate against SisFall and MobiAct
+1. Validate against SisFall and MobiAct
+2. Chase the residual false alarm — one sleeping session in 25 still trips the
+   inactivity path on some seed sets, which points at the shift detector missing
+   genuine movement rather than the sleeper truly lying still
 3. Check breathing is detectable on real wrist hardware
 4. Consider a learned model only after that
 
@@ -142,4 +182,4 @@ results.
 
 ## Author
 
-Bhumi Shah — [github.com/Bhumii-AI-IoT](https://github.com/Bhumii-AI-IoT)
+Bhumii Shah — [github.com/Bhumii-AI-IoT](https://github.com/Bhumii-AI-IoT)
